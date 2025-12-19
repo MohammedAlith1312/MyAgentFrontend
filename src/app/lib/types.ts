@@ -1,9 +1,11 @@
 // lib/types.ts
+
+// Core Interfaces
 export interface Conversation {
   id: string;
-  title?: string;
+  title?: string; // Optional for backward compatibility
   preview?: string;
-  messages?: Message[]; // Add messages array
+  messages?: Message[];
   messageCount?: number;
   createdAt: string;
   lastMessageAt?: string;
@@ -41,6 +43,60 @@ export interface LiveEval {
   created_at: string;
 }
 
+// Extended Interfaces
+export interface ConversationScoreCard {
+  id: string;
+  title: string;
+  preview: string;
+  createdAt: string;
+  lastMessageAt: string;
+  messageCount: number;
+  evals: {
+    total: number;
+    averageScore: number;
+    passed: number;
+    failed: number;
+    scorers: {
+      [key: string]: {
+        count: number;
+        avgScore: number;
+        passed: number;
+        failed: number;
+        lastScore?: number;
+      };
+    };
+    details: LiveEval[];
+  };
+}
+
+export interface ConversationWithEvals {
+  id: string;
+  title: string;
+  preview: string;
+  createdAt: string;
+  lastMessageAt: string;
+  userId: string;
+  messageCount: number;
+  metadata: Record<string, any>;
+  evals?: {
+    total: number;
+    averageScore: number;
+    passed: number;
+    failed: number;
+    scorers: {
+      [scorerId: string]: {
+        count: number;
+        avgScore: number;
+        passed: number;
+        failed: number;
+        lastScore?: number;
+      };
+    };
+    details?: LiveEval[];
+  };
+}
+
+// Telemetry Interfaces
 export interface ToolUsage {
   id: string;
   tool_name: string;
@@ -59,14 +115,8 @@ export interface GuardrailTelemetry {
   metadata?: Record<string, any>;
 }
 
-export interface ToolTelemetry {
-  id: string;
-  tool_name: string;
-  status: 'success' | 'error';
-  response_time: number;
-  created_at: string;
-  metadata?: Record<string, any>;
-}
+// Alias for ToolTelemetry (same as ToolUsage)
+export type ToolTelemetry = ToolUsage;
 
 export interface GuardrailLog {
   id: string;
@@ -79,6 +129,7 @@ export interface GuardrailLog {
   metadata?: Record<string, any>;
 }
 
+// Chat Interfaces
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -95,3 +146,26 @@ export interface GuardrailResponse {
   original_input?: string;
   error?: string;
 }
+export interface ConversationBase {
+  id: string;
+  title?: string;
+  preview?: string;
+  createdAt: string;
+  lastMessageAt?: string;
+  messageCount?: number;
+  userId?: string;
+  metadata?: Record<string, any>;
+}
+
+// Scorer related types
+export interface ScorerDetail {
+  count: number;
+  avgScore: number;
+  passed: number;
+  failed: number;
+  lastScore?: number;
+}
+
+export type ScorersMap = {
+  [scorerId: string]: ScorerDetail;
+};

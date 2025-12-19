@@ -333,17 +333,45 @@ export const apiClient = {
     }
   },
 
-  // Evaluation endpoints
-  getLiveEvals: async (conversationId?: string): Promise<LiveEval[]> => {
-    try {
-      const url = "/evals/live" + (conversationId ? `?conversationId=${conversationId}` : "");
-      const response = await api.get(url);
-      return response.data || [];
-    } catch (error) {
-      console.error("Error fetching live evals:", error);
-      return [];
-    }
-  },
+  // Evaluation endpoints - UPDATED WITH DEBUGGING
+// Evaluation endpoints (UPDATED – METADATA BASED)
+getLiveEvals: async (conversationId?: string): Promise<LiveEval[]> => {
+  try {
+    const url =
+      "/evals/live" + (conversationId ? `?conversationId=${conversationId}` : "");
+
+    const response = await api.get(url);
+
+    const rows: any[] = Array.isArray(response.data)
+      ? response.data
+      : [];
+
+    const evals: LiveEval[] = rows.map((item, index) => {
+      const metaConversationId =
+        item.metadata?.conversationId ??
+        item.metadata?.conversation_id ??
+        "unknown";
+
+      return {
+        id: item.id || `eval_${Date.now()}_${index}`,
+        conversation_id: metaConversationId, // ✅ FROM METADATA
+        scorer_id: item.scorer_id,
+        score: Number(item.score) || 0,
+        passed: Boolean(item.passed),
+        metadata: item.metadata || {},
+        created_at: item.created_at,
+      };
+    });
+
+    return conversationId
+      ? evals.filter(e => e.conversation_id === conversationId)
+      : evals;
+  } catch (error) {
+    console.error("Error fetching live evals:", error);
+    return [];
+  }
+},
+
 
   // Add this method - it was missing
   getConversationEvals: async (conversationId: string): Promise<LiveEval[]> => {
@@ -631,4 +659,3 @@ export type {
   ToolTelemetry,
   GuardrailLog
 };
-
