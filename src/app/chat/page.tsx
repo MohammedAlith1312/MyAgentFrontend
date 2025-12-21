@@ -1,7 +1,7 @@
 // app/chat/page.tsx
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Send, Bot, User, Plus, Loader2 } from "lucide-react";
 import { Button } from "../components/UI/Button";
@@ -9,7 +9,9 @@ import { Input } from "../components/UI/Input";
 import { apiClient } from "../lib/api";
 import type { ChatMessage } from "../lib/types";
 
-export default function ChatPage() {
+export const dynamic = 'force-dynamic';
+
+function ChatContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const conversationId = searchParams.get('conversationId');
@@ -346,5 +348,20 @@ export default function ChatPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading chat...</p>
+        </div>
+      </div>
+    }>
+      <ChatContent />
+    </Suspense>
   );
 }

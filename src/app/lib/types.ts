@@ -106,6 +106,18 @@ export interface ToolUsage {
   metadata?: Record<string, any>;
 }
 
+// ToolCall Interface for displaying tool execution in chat
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, any>;
+  status: 'pending' | 'executing' | 'success' | 'error';
+  result?: any;
+  error?: string;
+  timestamp?: string;
+  metadata?: Record<string, any>;
+}
+
 export interface GuardrailTelemetry {
   id: string;
   guardrail_name: string;
