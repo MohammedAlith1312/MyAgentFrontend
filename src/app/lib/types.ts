@@ -181,3 +181,72 @@ export interface ScorerDetail {
 export type ScorersMap = {
   [scorerId: string]: ScorerDetail;
 };
+
+// lib/types.ts - Add these to your existing file
+
+// Document Upload Types
+export interface DocumentUploadResponse {
+  success: boolean;
+  filename: string;
+  size: number;
+  message?: string;
+  truncated?: boolean;
+  extractedChars?: number;
+  originalSize?: number;
+  error?: string;
+}
+
+export interface DocumentUploadProgress {
+  loaded: number;
+  total: number;
+  percentage: number;
+}
+
+export interface SupportedFileType {
+  extension: string;
+  mimeType: string;
+  description: string;
+  maxSize: string;
+}
+
+export interface DocumentValidationResult {
+  isValid: boolean;
+  messages: string[];
+  maxSize?: number;
+  currentSize?: number;
+}
+
+export interface DocumentStats {
+  totalUploads: number;
+  successfulUploads: number;
+  failedUploads: number;
+  totalSize: number;
+  averageSize: number;
+  lastUpload: string | null;
+  byType: {
+    pdf: number;
+    txt: number;
+    md: number;
+    json: number;
+  };
+}
+
+// Document-related message types
+export interface DocumentMessage extends Message {
+  documentInfo?: {
+    filename: string;
+    fileType: string;
+    size: number;
+    truncated?: boolean;
+    originalSize?: number;
+  };
+}
+
+// Document processing status
+export interface DocumentProcessingStatus {
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress?: number;
+  message?: string;
+  error?: string;
+  filename?: string;
+}
