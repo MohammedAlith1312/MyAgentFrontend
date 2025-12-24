@@ -10,6 +10,7 @@ import {
   Trash2,
   RefreshCw
 } from "lucide-react";
+import Swal from 'sweetalert2';
 import { apiClient } from "../lib/api";
 import type { Conversation } from "../lib/types";
 
@@ -130,23 +131,55 @@ export default function HistoryPage() {
     return `Chat ${conv.id?.slice(-6) || 'New'}`;
   };
 
-  const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
+  const confirmDelete = (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this conversation? This action cannot be undone.")) return;
 
+    Swal.fire({
+      title: 'Delete Conversation?',
+      text: "This action cannot be undone.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#f3f4f6',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel',
+      customClass: {
+        cancelButton: 'text-gray-800 font-medium'
+      }
+    }).then((result) => {
+      if (result.isConfirmed) {
+        executeDelete(conversationId);
+      }
+    });
+  };
+
+  const executeDelete = async (conversationId: string) => {
     try {
       await apiClient.deleteConversation(conversationId);
-
-      // Remove from localStorage
-      const storageKey = `chat_messages_${conversationId}`;
-      localStorage.removeItem(storageKey);
 
       // Remove from state
       setConversations(prev => prev.filter(c => c.id !== conversationId));
 
+      Swal.fire({
+        toast: true,
+        position: 'bottom-end',
+        icon: 'success',
+        title: 'Conversation deleted',
+        showConfirmButton: false,
+        timer: 3000
+      });
+
     } catch (error) {
       console.error("❌ Failed to delete conversation:", error);
-      alert("Failed to delete conversation. Please try again.");
+
+      Swal.fire({
+        toast: true,
+        position: 'bottom-end',
+        icon: 'error',
+        title: 'Failed to delete conversation',
+        showConfirmButton: false,
+        timer: 3000
+      });
     }
   };
 
@@ -179,7 +212,7 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6 relative">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -265,7 +298,7 @@ export default function HistoryPage() {
                         </div>
                       </div>
                       <button
-                        onClick={(e) => handleDeleteConversation(conv.id, e)}
+                        onClick={(e) => confirmDelete(conv.id, e)}
                         className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                         title="Delete conversation"
                       >
@@ -291,6 +324,7 @@ export default function HistoryPage() {
           </div>
         )}
       </div>
+
     </div>
   );
 }

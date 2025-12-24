@@ -351,7 +351,7 @@ export const apiClient = {
   getGuardrailLogs: async (): Promise<GuardrailLog[]> => {
     try {
       const response = await api.get("/telemetry/guardrails");
-      return response.data || [];
+      return response.data?.guardrails || response.data?.data || response.data || [];
     } catch (error) {
       console.error("Error fetching guardrail logs:", error);
       return [];
@@ -361,7 +361,8 @@ export const apiClient = {
   getGuardrailTelemetry: async (): Promise<GuardrailTelemetry[]> => {
     try {
       const response = await api.get("/telemetry/guardrails");
-      return response.data || [];
+      // Handle both wrapped and unwrapped responses
+      return response.data?.guardrails || response.data?.data || response.data || [];
     } catch (error) {
       console.error("Error fetching guardrail telemetry:", error);
       return [];

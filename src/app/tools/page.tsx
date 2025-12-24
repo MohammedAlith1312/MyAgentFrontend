@@ -2,11 +2,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  Wrench, 
-  Zap, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Wrench,
+  Zap,
+  CheckCircle,
+  XCircle,
   Search,
   Filter,
   RefreshCw,
@@ -49,48 +49,12 @@ export default function ToolsPage() {
     }
   };
 
-  // Calculate statistics
-  const successCount = telemetry.filter(t => t.status === 'success').length;
-  const errorCount = telemetry.filter(t => t.status === 'error' || t.status === 'failed').length;
-  
-  // Group by tool
-  const toolStats = telemetry.reduce((acc: Record<string, {
-    total: number;
-    success: number;
-    error: number;
-    lastUsed: string;
-  }>, item) => {
-    const toolName = item.tool_name || 'Unknown';
-    
-    if (!acc[toolName]) {
-      acc[toolName] = {
-        total: 0,
-        success: 0,
-        error: 0,
-        lastUsed: item.created_at
-      };
-    }
-    
-    acc[toolName].total++;
-    if (item.status === 'success') {
-      acc[toolName].success++;
-    } else {
-      acc[toolName].error++;
-    }
-    
-    if (item.created_at > acc[toolName].lastUsed) {
-      acc[toolName].lastUsed = item.created_at;
-    }
-    
-    return acc;
-  }, {});
-
   // Filter tools
   const filteredTelemetry = telemetry.filter(item => {
     if (!searchQuery) return true;
     const searchLower = searchQuery.toLowerCase();
     const toolName = (item.tool_name || '').toLowerCase();
-    
+
     return toolName.includes(searchLower);
   }).filter(item => {
     if (filter === "all") return true;
@@ -99,23 +63,53 @@ export default function ToolsPage() {
     return true;
   });
 
+  // Calculate statistics
+  const successCount = filteredTelemetry.filter(t => t.status === 'success').length;
+  const errorCount = filteredTelemetry.filter(t => t.status === 'error' || t.status === 'failed').length;
+
+  // Group by tool
+  const toolStats = filteredTelemetry.reduce((acc: Record<string, {
+    total: number;
+    success: number;
+    error: number;
+    lastUsed: string;
+  }>, item) => {
+    const toolName = item.tool_name || 'Unknown';
+
+    if (!acc[toolName]) {
+      acc[toolName] = {
+        total: 0,
+        success: 0,
+        error: 0,
+        lastUsed: item.created_at
+      };
+    }
+
+    acc[toolName].total++;
+    if (item.status === 'success') {
+      acc[toolName].success++;
+    } else {
+      acc[toolName].error++;
+    }
+
+    if (item.created_at > acc[toolName].lastUsed) {
+      acc[toolName].lastUsed = item.created_at;
+    }
+
+    return acc;
+  }, {});
+
+
+
   const formatDateTime = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-      
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true
       });
     } catch {
       return 'Unknown';
@@ -218,7 +212,7 @@ export default function ToolsPage() {
                 Across {Object.keys(toolStats).length} unique tools
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
@@ -230,13 +224,13 @@ export default function ToolsPage() {
                 </div>
               </div>
               <div className="mt-4 text-sm text-gray-500">
-                {telemetry.length > 0 
+                {telemetry.length > 0
                   ? `${Math.round((successCount / telemetry.length) * 100)}% success rate`
                   : 'No data'
                 }
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
@@ -248,7 +242,7 @@ export default function ToolsPage() {
                 </div>
               </div>
               <div className="mt-4 text-sm text-gray-500">
-                {telemetry.length > 0 
+                {telemetry.length > 0
                   ? `${Math.round((errorCount / telemetry.length) * 100)}% error rate`
                   : 'No data'
                 }
@@ -262,10 +256,10 @@ export default function ToolsPage() {
           {Object.entries(toolStats)
             .sort(([, a], [, b]) => b.total - a.total)
             .map(([toolName, stats]) => {
-              const successRate = stats.total > 0 
-                ? Math.round((stats.success / stats.total) * 100) 
+              const successRate = stats.total > 0
+                ? Math.round((stats.success / stats.total) * 100)
                 : 0;
-              
+
               return (
                 <div key={toolName} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                   {/* Tool Header */}
@@ -294,15 +288,15 @@ export default function ToolsPage() {
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Progress bar */}
                     <div className="w-full bg-gray-100 rounded-full h-2 mb-2">
-                      <div 
+                      <div
                         className="bg-green-500 h-2 rounded-full transition-all duration-300"
                         style={{ width: `${successRate}%` }}
                       />
                     </div>
-                    
+
                     <div className="flex justify-between text-sm text-gray-500">
                       <span>{stats.success} successful</span>
                       <span>{stats.error} failed</span>
@@ -311,7 +305,7 @@ export default function ToolsPage() {
                 </div>
               );
             })}
-          
+
           {/* Tool Calls Table */}
           {filteredTelemetry.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -347,11 +341,10 @@ export default function ToolsPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
-                            item.status === 'success' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
+                          <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm ${item.status === 'success'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                            }`}>
                             {item.status === 'success' ? (
                               <>
                                 <CheckCircle className="w-4 h-4" />
@@ -373,7 +366,7 @@ export default function ToolsPage() {
                   </tbody>
                 </table>
               </div>
-              
+
               {filteredTelemetry.length > 10 && (
                 <div className="p-4 border-t border-gray-200 text-center">
                   <div className="text-sm text-gray-500">

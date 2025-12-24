@@ -22,7 +22,7 @@ export default function RootLayout({
         <div className="flex min-h-screen">
           {/* Modern Sidebar */}
           <Sidebar />
-          
+
           {/* Main Content Area */}
           <main className="flex-1 overflow-y-auto">
             {children}

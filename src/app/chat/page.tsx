@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Send, Bot, User, Plus } from "lucide-react";
+import Swal from 'sweetalert2';
 import { Button } from "../components/UI/Button";
 import { Input } from "../components/UI/Input";
 import { apiClient } from "../lib/api";
@@ -120,13 +121,14 @@ function ChatContent() {
       }
     } catch (error: any) {
       console.error("Chat error:", error);
-      const systemMessage: ChatMessage = {
-        id: `error_${Date.now()}`,
-        role: "system",
-        content: error.response?.data?.message || error.message || "Failed to send message",
+      // Treat API errors (guardrail blocks) as friendly assistant messages
+      const assistantMessage: ChatMessage = {
+        id: `msg_${Date.now() + 1}`, // Use msg_ prefix like normal messages
+        role: "assistant", // Changed from "system" to "assistant"
+        content: error.response?.data?.message || error.message || "I apologize, but I cannot complete that request.",
         timestamp: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, systemMessage]);
+      setMessages(prev => [...prev, assistantMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -141,11 +143,25 @@ function ChatContent() {
 
   const startNewChat = () => {
     if (messages.length > 0) {
-      if (confirm("Start a new chat? Your current chat will be saved in your chat history.")) {
-        setMessages([]);
-        setInput("");
-        router.push('/chat');
-      }
+      Swal.fire({
+        title: 'Start a new chat?',
+        text: "Your current chat will be saved in your chat history.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3b82f6',
+        cancelButtonColor: '#01050eff',
+        confirmButtonText: 'Yes, start new',
+        cancelButtonText: 'Cancel',
+        customClass: {
+          cancelButton: 'text-gray-800 font-medium'
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+          setMessages([]);
+          setInput("");
+          router.push('/chat');
+        }
+      });
     } else {
       router.push('/chat');
     }
@@ -187,12 +203,7 @@ function ChatContent() {
       {/* Messages Area */}
       <main className="flex-1 overflow-y-auto p-4">
         <div className="max-w-3xl mx-auto space-y-6">
-          {isLoadingHistory ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading chat history...</p>
-            </div>
-          ) : messages.length === 0 ? (
+          {messages.length === 0 && !conversationId ? (
             <div className="text-center py-12 px-4">
               <div className="p-8 bg-gradient-to-br from-blue-50 to-white rounded-3xl shadow-sm inline-block mb-6">
                 <Bot className="w-20 h-20 text-blue-400" />
@@ -201,7 +212,7 @@ function ChatContent() {
               <p className="text-gray-600 max-w-md mx-auto">
                 Start a conversation with the AI assistant. Type your message below to begin.
               </p>
-              <div className="mt-8 max-w-md mx-auto space-y-3 text-left text-sm text-gray-500">
+              {/* <div className="mt-8 max-w-md mx-auto space-y-3 text-left text-sm text-gray-500">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   <span>Type at least 2 words to send a message</span>
@@ -210,7 +221,7 @@ function ChatContent() {
                   <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                   <span>Your conversations are automatically saved</span>
                 </div>
-              </div>
+              </div> */}
             </div>
           ) : (
             messages.map((message) => {

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { 
-  MessageSquare, 
-  CheckCircle, 
-  XCircle, 
+import {
+  MessageSquare,
+  CheckCircle,
+  XCircle,
   BarChart3,
   TrendingUp,
   Clock,
@@ -16,36 +16,101 @@ import {
   ChevronUp,
   Hash,
   FileText,
-  AlertCircle
+  AlertCircle,
+  ArrowLeft
 } from "lucide-react";
+import Swal from 'sweetalert2';
 import { apiClient } from "../lib/api";
-import type { LiveEval } from "../lib/types";
+import type { LiveEval, Conversation, Message, ScorerDetail, ScorersMap } from "../lib/types";
 
-// Define missing types locally
-interface ConversationBase {
-  id: string;
-  title?: string;
-  preview?: string;
-  createdAt: string;
-  lastMessageAt?: string;
-  messageCount?: number;
-  userId?: string;
-  metadata?: Record<string, any>;
-}
+// Helper functions - moved outside component to avoid hoisting issues
+const getConversationTitle = (conv: Conversation) => {
+  // If conversation already has a proper title, use it
+  if (conv.title && conv.title !== "undefined" && conv.title.trim() && !conv.title.startsWith("Chat about") && !conv.title.startsWith("New Chat") && !conv.title.startsWith("Realtime")) {
+    return conv.title.length > 80 ? conv.title.substring(0, 80) + "..." : conv.title;
+  }
 
-interface ScorerDetail {
-  count: number;
-  avgScore: number;
-  passed: number;
-  failed: number;
-  lastScore?: number;
-}
+  // Try to extract meaningful title from messages
+  if (conv.messages && conv.messages.length > 0) {
+    // Look for user messages that ask about specific topics
+    const userMessages = conv.messages.filter(m => m.role === 'user');
 
-type ScorersMap = {
-  [scorerId: string]: ScorerDetail;
+    // Check first user message for topic/question
+    if (userMessages.length > 0) {
+      const firstUserMsg = userMessages[0];
+      if (firstUserMsg?.content && firstUserMsg.content !== "[No content available]") {
+        const content = firstUserMsg.content.trim();
+        const lowerContent = content.toLowerCase();
+
+        // Specific override for Git Issues/Analysis
+        if (lowerContent.includes("git issue") || (lowerContent.includes("git") && lowerContent.includes("analy"))) {
+          return "Git Issue Analysis";
+        }
+
+        // Extract question/topic patterns
+        if (lowerContent.includes("what is")) {
+          const match = content.match(/what is\s+(.*?)[\?\.\n]/i);
+          if (match && match[1]) {
+            return `What is ${match[1].trim()}`;
+          }
+        } else if (lowerContent.includes("how to")) {
+          const match = content.match(/how to\s+(.*?)[\?\.\n]/i);
+          if (match && match[1]) {
+            return `How to ${match[1].trim()}`;
+          }
+        } else if (lowerContent.includes("tell me about")) {
+          const match = content.match(/tell me about\s+(.*?)[\?\.\n]/i);
+          if (match && match[1]) {
+            return `About ${match[1].trim()}`;
+          }
+        } else if (lowerContent.includes("explain")) {
+          const match = content.match(/explain\s+(.*?)[\?\.\n]/i);
+          if (match && match[1]) {
+            return `Explain: ${match[1].trim()}`;
+          }
+        } else if (lowerContent.includes("analy")) {
+          const match = content.match(/analy[sz]e\s+(.*?)[\?\.\n]/i);
+          if (match && match[1]) {
+            return `Analyze: ${match[1].trim()}`;
+          }
+        }
+
+        // Try to extract a meaningful title from the content
+        if (content.length > 10) {
+          const cleanContent = content
+            .replace(/[^\w\s.,!?-]/gi, '')
+            .trim();
+
+          if (cleanContent) {
+            return cleanContent.length > 80
+              ? cleanContent.substring(0, 80) + "..."
+              : cleanContent;
+          }
+        } else if (content.length > 0) {
+          return content.substring(0, 80) + "...";
+        }
+      }
+    }
+
+    // Fallback to first non-empty message content
+    for (const msg of conv.messages) {
+      if (msg.content && msg.content.trim() && msg.content !== "[No content available]") {
+        const cleanContent = msg.content
+          .replace(/[^\w\s.,!?-]/gi, '')
+          .trim()
+          .substring(0, 60);
+        if (cleanContent) {
+          return `${cleanContent}${msg.content.length > 60 ? '...' : ''}`;
+        }
+      }
+    }
+  }
+
+  // Final fallback
+  return `Chat ${conv.id?.slice(-6) || 'New'}`;
 };
 
-interface ConversationScoreCard {
+interface UIConversation {
   id: string;
   title: string;
   preview: string;
@@ -90,8 +155,9 @@ const getScorerIcon = (scorerId: string) => {
   const icons: Record<string, any> = {
     "logical-reasoning-100": BarChart3,
     "math-reasoning-100": Hash,
+    "default": BarChart3
   };
-  return icons[scorerId] || BarChart3;
+  return icons[scorerId] || icons.default;
 };
 
 const formatDate = (dateString: string): string => {
@@ -108,49 +174,23 @@ const formatDate = (dateString: string): string => {
   return date.toLocaleDateString();
 };
 
-const ScoreCircle = ({ score, size = 36, strokeWidth = 3 }: { 
-  score: number; 
-  size?: number; 
-  strokeWidth?: number; 
-}) => {
+const ScoreLine = ({ score }: { score: number }) => {
   const getColor = (score: number): string => {
-    if (score >= 80) return "#10B981";
-    if (score >= 60) return "#F59E0B";
-    return "#EF4444";
+    if (score >= 80) return "bg-emerald-500";
+    if (score >= 60) return "bg-amber-500";
+    return "bg-red-500";
   };
 
-  const circumference = 2 * Math.PI * 15.9155;
-  const dashOffset = circumference - (score / 100) * circumference;
-
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg className="w-full h-full" viewBox="0 0 36 36">
-        {/* Background circle */}
-        <circle
-          cx="18"
-          cy="18"
-          r="15.9155"
-          fill="none"
-          stroke="#E5E7EB"
-          strokeWidth={strokeWidth}
+    <div className="min-w-[140px]">
+      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${getColor(score)} transition-all duration-500`}
+          style={{ width: `${score}%` }}
         />
-        {/* Score circle */}
-        <circle
-          cx="18"
-          cy="18"
-          r="15.9155"
-          fill="none"
-          stroke={getColor(score)}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={`${score}, 100`}
-          style={{ transition: "stroke-dashoffset 0.5s ease" }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="font-bold" style={{ fontSize: size * 0.4 }}>
-          {Math.round(score)}
-        </span>
+      </div>
+      <div className="font-bold text-sm text-gray-700 mt-1">
+        {Math.round(score)}
       </div>
     </div>
   );
@@ -158,11 +198,11 @@ const ScoreCircle = ({ score, size = 36, strokeWidth = 3 }: {
 
 const ScorerBadge = ({ scorerId, scorerData }: ScorerBadgeProps) => {
   const ScorerIcon = getScorerIcon(scorerId);
-  const scoreColorClass = scorerData.avgScore >= 80 
-    ? "bg-green-50 text-green-700" 
+  const scoreColorClass = scorerData.avgScore >= 80
+    ? "bg-green-50 text-green-700"
     : scorerData.avgScore >= 60
-    ? "bg-yellow-50 text-yellow-700"
-    : "bg-red-50 text-red-700";
+      ? "bg-yellow-50 text-yellow-700"
+      : "bg-red-50 text-red-700";
 
   return (
     <div className={`px-3 py-1.5 rounded-full flex items-center gap-2 ${scoreColorClass}`}>
@@ -181,232 +221,117 @@ const ScorerBadge = ({ scorerId, scorerData }: ScorerBadgeProps) => {
 };
 
 export default function EvalsPage() {
-  const [conversations, setConversations] = useState<ConversationScoreCard[]>([]);
+  const [conversations, setConversations] = useState<UIConversation[]>([]);
   const [allEvals, setAllEvals] = useState<LiveEval[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedScorer, setSelectedScorer] = useState<string>("all");
   const [scoreRange, setScoreRange] = useState<[number, number]>([0, 100]);
-  const [expandedConversation, setExpandedConversation] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalConversations: 0,
     totalEvals: 0,
-    overallAvgScore: 0,
     passRate: 0,
-    avgMessagesPerConv: 0,
   });
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      
-      console.log('🔄 Starting data load for evaluations page...');
-      
-      // Fetch conversations and evaluations in parallel
+
       const [conversationsData, evalsData] = await Promise.all([
         apiClient.getConversations(),
         apiClient.getLiveEvals(),
       ]);
 
-      console.log('📊 Data loaded:', {
-        conversationsCount: conversationsData.length,
-        evalsCount: evalsData.length,
-        evalsSample: evalsData.slice(0, 3), // Show first 3 evals
-        allZeroScores: evalsData.every(e => e.score === 0),
-        anyZeroScores: evalsData.some(e => e.score === 0),
-        scoreRange: {
-          min: Math.min(...evalsData.map(e => e.score)),
-          max: Math.max(...evalsData.map(e => e.score))
-        }
-      });
-
       setAllEvals(evalsData);
 
-      // Process conversations with their evaluations
-      const processedConversations: ConversationScoreCard[] = conversationsData
-        .filter((conv: any): conv is ConversationBase & { 
-          id: string; 
-          title: string; 
-          preview: string; 
-          createdAt: string; 
-          lastMessageAt: string; 
-          messageCount: number; 
-          userId: string;
-        } => {
-          // Ensure required fields exist
-          const isValid = !!conv.id && !!conv.title && !!conv.preview && 
-                         !!conv.createdAt && !!conv.lastMessageAt && 
-                         typeof conv.messageCount === 'number' && !!conv.userId;
-          
-          if (!isValid) {
-            console.warn('❌ Invalid conversation skipped:', {
-              id: conv.id,
-              hasTitle: !!conv.title,
-              hasPreview: !!conv.preview,
-              hasCreatedAt: !!conv.createdAt,
-              hasLastMessageAt: !!conv.lastMessageAt,
-              hasMessageCount: typeof conv.messageCount === 'number',
-              hasUserId: !!conv.userId
-            });
-          }
-          
-          return isValid;
+      const processedConversations: UIConversation[] = conversationsData
+        .filter((conv: Conversation): conv is Conversation => {
+          return !!conv.id && !!conv.createdAt;
         })
-        .map((conv: ConversationBase & { 
-          title: string; 
-          preview: string; 
-          lastMessageAt: string; 
-          messageCount: number; 
-          userId: string;
-        }) => {
-          const conversationEvals = evalsData.filter(evalItem => 
+        .map((conv: Conversation) => {
+          const conversationEvals = evalsData.filter(evalItem =>
             evalItem.conversation_id === conv.id
           );
 
-          console.log(`📝 Processing conversation ${conv.id}:`, {
-            title: conv.title,
-            evalCount: conversationEvals.length,
-            evalScores: conversationEvals.map(e => e.score),
-            hasZeroScores: conversationEvals.some(e => e.score === 0)
-          });
+          const scorersMap: ScorersMap = {};
 
-          // Calculate scores per scorer
-          const scorersMap: Record<string, {
-            scores: number[];
-            passed: number;
-            failed: number;
-          }> = {};
-          
           conversationEvals.forEach(evalItem => {
             const scorerId = evalItem.scorer_id;
             if (!scorersMap[scorerId]) {
               scorersMap[scorerId] = {
-                scores: [],
+                count: 0,
+                avgScore: 0,
                 passed: 0,
                 failed: 0
               };
             }
-            scorersMap[scorerId].scores.push(evalItem.score);
-            if (evalItem.passed) {
-              scorersMap[scorerId].passed++;
-            } else {
-              scorersMap[scorerId].failed++;
-            }
+            const s = scorersMap[scorerId];
+            s.count++;
+            if (evalItem.passed) s.passed++;
+            else s.failed++;
+
+            const totalScoreSoFar = (s.avgScore * (s.count - 1)) + evalItem.score;
+            s.avgScore = totalScoreSoFar / s.count;
+            s.lastScore = evalItem.score;
           });
 
-          // Convert to final scorer format
-          const scorers: ScorersMap = {};
-          
-          Object.entries(scorersMap).forEach(([scorerId, data]) => {
-            const totalScore = data.scores.reduce((sum: number, score: number) => sum + score, 0);
-            const avgScore = data.scores.length > 0 ? totalScore / data.scores.length : 0;
-            
-            scorers[scorerId] = {
-              count: data.scores.length,
-              avgScore,
-              passed: data.passed,
-              failed: data.failed,
-              lastScore: data.scores[data.scores.length - 1]
-            };
-          });
-
-          const totalScore = conversationEvals.reduce((sum: number, evalItem: LiveEval) => sum + evalItem.score, 0);
+          const totalScore = conversationEvals.reduce((sum, e) => sum + e.score, 0);
           const passedCount = conversationEvals.filter(e => e.passed).length;
-          const failedCount = conversationEvals.length - passedCount;
 
-          const result = {
+          const result: UIConversation = {
             id: conv.id,
-            title: conv.title,
-            preview: conv.preview,
+            title: getConversationTitle(conv),
+            preview: conv.preview || "",
             createdAt: conv.createdAt,
-            lastMessageAt: conv.lastMessageAt,
-            userId: conv.userId,
-            messageCount: conv.messageCount,
+            lastMessageAt: conv.lastMessageAt || conv.createdAt,
+            userId: conv.userId || "",
+            messageCount: conv.messageCount || 0,
             metadata: conv.metadata || {},
             evals: {
               total: conversationEvals.length,
-              averageScore: conversationEvals.length > 0 
-                ? totalScore / conversationEvals.length 
+              averageScore: conversationEvals.length > 0
+                ? totalScore / conversationEvals.length
                 : 0,
               passed: passedCount,
-              failed: failedCount,
-              scorers,
+              failed: conversationEvals.length - passedCount,
+              scorers: scorersMap,
               details: conversationEvals
             }
           };
 
-          console.log(`✅ Processed conversation ${conv.id}:`, {
-            averageScore: result.evals.averageScore,
-            scorerCount: Object.keys(result.evals.scorers).length
-          });
-
           return result;
         });
 
-      console.log('🎯 Final processed conversations:', {
-        count: processedConversations.length,
-        conversationIds: processedConversations.map(c => c.id),
-        averageScores: processedConversations.map(c => c.evals.averageScore)
-      });
-
       setConversations(processedConversations);
 
-      // Calculate overall stats
       const totalEvals = evalsData.length;
       const passedEvals = evalsData.filter(e => e.passed).length;
-      const totalScore = evalsData.reduce((sum: number, evalItem: LiveEval) => sum + evalItem.score, 0);
-      
-      const totalMessages = processedConversations.reduce((sum: number, conv: ConversationScoreCard) => sum + conv.messageCount, 0);
-      
-      const overallAvgScore = totalEvals > 0 ? totalScore / totalEvals : 0;
       const passRate = totalEvals > 0 ? (passedEvals / totalEvals) * 100 : 0;
-      const avgMessagesPerConv = processedConversations.length > 0 
-        ? totalMessages / processedConversations.length
-        : 0;
-
-      console.log('📈 Calculated stats:', {
-        totalConversations: processedConversations.length,
-        totalEvals,
-        overallAvgScore,
-        passRate,
-        avgMessagesPerConv
-      });
 
       setStats({
         totalConversations: processedConversations.length,
         totalEvals,
-        overallAvgScore,
         passRate,
-        avgMessagesPerConv,
       });
 
     } catch (error) {
       console.error("❌ Error loading data:", error);
     } finally {
       setLoading(false);
-      console.log('✅ Data loading completed');
     }
   }, []);
 
   useEffect(() => {
     loadData();
-    // Auto-refresh every 30 seconds
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, [loadData]);
 
-  // Get unique scorers from all evaluations
   const allScorers = useMemo(() => {
     const scorers = Array.from(new Set(allEvals.map(e => e.scorer_id)));
-    // Filter out "tool-usage-100" scorer if it exists
     const filteredScorers = scorers.filter(scorerId => scorerId !== "tool-usage-100");
-    
-    console.log('🎯 Available scorers:', {
-      allScorers: scorers,
-      filteredScorers,
-      scorerCount: filteredScorers.length
-    });
-    
+
     return filteredScorers.map(scorerId => ({
       id: scorerId,
       name: getScorerDisplayName(scorerId),
@@ -415,34 +340,31 @@ export default function EvalsPage() {
     }));
   }, [allEvals]);
 
-  // Filter conversations - also filter out tool-usage scorer from conversation display
   const filteredConversations = useMemo(() => {
-    console.log('🔍 Filtering conversations:', {
-      total: conversations.length,
-      searchTerm,
-      selectedScorer,
-      scoreRange
-    });
-    
     return conversations.filter(conv => {
-      // Search filter
-      if (searchTerm && 
-          !conv.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-          !conv.preview.toLowerCase().includes(searchTerm.toLowerCase())) {
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        if (!conv.title?.toLowerCase().includes(term) &&
+          !conv.preview?.toLowerCase().includes(term) &&
+          !conv.id?.toLowerCase().includes(term)) {
+          return false;
+        }
+      }
+
+      if (selectedScorer !== "all") {
+        if (!conv.evals.scorers[selectedScorer]) return false;
+      }
+
+      let scoreToCheck = conv.evals.averageScore;
+      if (selectedScorer !== "all" && conv.evals.scorers[selectedScorer]) {
+        scoreToCheck = conv.evals.scorers[selectedScorer].avgScore;
+      }
+
+      const roundedScore = Math.round(scoreToCheck);
+      if (roundedScore < scoreRange[0] || roundedScore > scoreRange[1]) {
         return false;
       }
-      
-      // Scorer filter
-      if (selectedScorer !== "all" && conv.evals.total > 0) {
-        const hasScorer = conv.evals.details.some(e => e.scorer_id === selectedScorer);
-        if (!hasScorer) return false;
-      }
-      
-      // Score range filter
-      if (conv.evals.averageScore < scoreRange[0] || conv.evals.averageScore > scoreRange[1]) {
-        return false;
-      }
-      
+
       return true;
     });
   }, [conversations, searchTerm, selectedScorer, scoreRange]);
@@ -461,21 +383,162 @@ export default function EvalsPage() {
         new Date(conv.lastMessageAt).toLocaleString()
       ])
     ].map(row => row.join(",")).join("\n");
-    
+
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `conversation-scores-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+
+    Swal.fire({
+      title: 'Exported!',
+      text: 'Your CSV file has been downloaded.',
+      icon: 'success',
+      confirmButtonColor: '#3b82f6',
+    });
   };
 
   if (loading && conversations.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading conversations and scores...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="relative mb-8 flex justify-center">
+            {/* Outer ring */}
+            <div className="absolute inset-0 rounded-full border-4 border-blue-100 animate-pulse scale-150 opacity-20"></div>
+            {/* Spinner */}
+            <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            {/* Inner icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <RefreshCw className="w-6 h-6 text-blue-600 animate-pulse" />
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Syncing Evaluations</h2>
+          <p className="text-gray-500 mb-8">Fetching the latest conversations and scores from the engine...</p>
+
+          <div className="space-y-3">
+            <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 animate-[loading_2s_ease-in-out_infinite]" style={{ width: '40%' }}></div>
+            </div>
+            <div className="flex justify-between text-xs text-gray-400 font-medium">
+              <span>CONNECTING TO SCORERS</span>
+              <span>100% SECURE</span>
+            </div>
+          </div>
+
+          <style jsx>{`
+            @keyframes loading {
+              0% { transform: translateX(-100%); width: 30%; }
+              50% { width: 60%; }
+              100% { transform: translateX(400%); width: 30%; }
+            }
+          `}</style>
+        </div>
+      </div>
+    );
+  }
+
+
+  if (selectedConversationId) {
+    const conv = conversations.find(c => c.id === selectedConversationId);
+    if (!conv) {
+      setSelectedConversationId(null);
+      return null;
+    }
+
+    const filteredScorers = Object.entries(conv.evals.scorers).filter(
+      ([scorerId]) => {
+        if (scorerId === "tool-usage-100") return false;
+        if (selectedScorer !== "all" && scorerId !== selectedScorer) return false;
+        return true;
+      }
+    );
+
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+        <div className="max-w-4xl mx-auto">
+          <button
+            onClick={() => setSelectedConversationId(null)}
+            className="flex items-center gap-2 text-gray-600 mb-6 hover:text-gray-900 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="font-medium">Back to Conversations</span>
+          </button>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-4">{conv.title}</h2>
+                <div className="text-sm text-gray-500 mb-6 space-y-2">
+                  <div>
+                    <MessageSquare className="w-4 h-4 mb-1" />
+                    <div>{conv.messageCount} messages</div>
+                  </div>
+                  {/* <div>
+                    <Clock className="w-4 h-4 mb-1" />
+                    <div>Updated {formatDate(conv.lastMessageAt)}</div>
+                  </div> */}
+                </div>
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="mb-2 text-sm font-medium text-gray-500">OVERALL SCORE</div>
+                  <ScoreLine score={conv.evals.averageScore} />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <h3 className="font-semibold text-gray-800 mb-4">Scorer Breakdown</h3>
+              <div className="flex flex-wrap gap-2 mb-8">
+                {filteredScorers.map(([scorerId, scorerData]) => (
+                  <ScorerBadge
+                    key={scorerId}
+                    scorerId={scorerId}
+                    scorerData={scorerData}
+                  />
+                ))}
+              </div>
+
+              <h3 className="font-semibold text-gray-800 mb-4">Detailed Evaluations</h3>
+              <div className="space-y-4">
+                {conv.evals.details
+                  .filter(evalItem => {
+                    if (evalItem.scorer_id === "tool-usage-100") return false;
+                    if (selectedScorer !== "all" && evalItem.scorer_id !== selectedScorer) return false;
+                    return true;
+                  })
+                  .map((evalItem, idx) => {
+                    const ScorerIcon = getScorerIcon(evalItem.scorer_id);
+                    return (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="mb-4">
+                          <div className="mb-3">
+                            <div className={`p-2 rounded-lg inline-block mb-2 ${evalItem.passed ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
+                              <ScorerIcon className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h5 className="font-medium text-gray-900">{getScorerDisplayName(evalItem.scorer_id)}</h5>
+                              <span className="text-xs text-gray-500">ID: {evalItem.id}</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className={`inline-block px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${evalItem.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {evalItem.passed ? 'Passed' : 'Failed'}
+                            </div>
+                            <div className="text-2xl font-black text-gray-900">{evalItem.score}</div>
+                          </div>
+                        </div>
+                        {evalItem.metadata?.reason && (
+                          <div className="mt-2 text-sm text-gray-600 bg-white p-3 rounded border border-gray-200">
+                            <strong>Reasoning:</strong> {evalItem.metadata.reason}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -484,43 +547,33 @@ export default function EvalsPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                Conversation Evaluations
-              </h1>
-              <p className="text-gray-600 mt-2">
-                Real-time scores from all backend scorers (0-100)
-              </p>
-              <div className="text-sm text-gray-500 mt-1">
-                Showing {filteredConversations.length} conversations with evaluations
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">RealTime Performance</h1>
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-full animate-pulse">
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Live</span>
+                </div>
               </div>
+              {/* <div className="text-sm text-gray-500 mt-1">
+                Showing {filteredConversations.length} conversations with evaluations
+              </div> */}
             </div>
+
             <div className="flex items-center gap-3">
-              <button
-                onClick={loadData}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </button>
-              <button
-                onClick={exportData}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
+              <button onClick={exportData} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                 <Download className="w-4 h-4" />
                 Export
               </button>
             </div>
           </div>
 
-          {/* Stats Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-              <div className="flex items-center gap-3">
-                <MessageSquare className="w-5 h-5 text-blue-500" />
+              <div>
+                <MessageSquare className="w-5 h-5 text-blue-500 mb-2" />
                 <div>
                   <p className="text-sm text-gray-500">Conversations</p>
                   <p className="text-2xl font-bold">{stats.totalConversations}</p>
@@ -528,35 +581,16 @@ export default function EvalsPage() {
               </div>
             </div>
             <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-              <div className="flex items-center gap-3">
-                <BarChart3 className="w-5 h-5 text-green-500" />
-                <div>
-                  <p className="text-sm text-gray-500">Average Score</p>
-                  <p className="text-2xl font-bold">{stats.overallAvgScore.toFixed(1)}</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <div>
+                <CheckCircle className="w-5 h-5 text-emerald-500 mb-2" />
                 <div>
                   <p className="text-sm text-gray-500">Pass Rate</p>
                   <p className="text-2xl font-bold">{stats.passRate.toFixed(1)}%</p>
                 </div>
               </div>
             </div>
-            <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-              <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-purple-500" />
-                <div>
-                  <p className="text-sm text-gray-500">Avg Messages</p>
-                  <p className="text-2xl font-bold">{stats.avgMessagesPerConv.toFixed(1)}</p>
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Filters */}
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200 mb-6">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1">
@@ -567,227 +601,76 @@ export default function EvalsPage() {
                     placeholder="Search conversations..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
               <div className="flex gap-4">
-                <select
-                  value={selectedScorer}
-                  onChange={(e) => setSelectedScorer(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
+                <select value={selectedScorer} onChange={(e) => setSelectedScorer(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="all">All Scorers</option>
                   {allScorers.map(scorer => (
-                    <option key={scorer.id} value={scorer.id}>
-                      {scorer.name}
-                    </option>
+                    <option key={scorer.id} value={scorer.id}>{scorer.name}</option>
                   ))}
                 </select>
-                <select
-                  value={scoreRange[1]}
-                  onChange={(e) => setScoreRange([0, parseInt(e.target.value)])}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value={100}>All Scores</option>
+                <select value={scoreRange[0]} onChange={(e) => setScoreRange([parseInt(e.target.value), 100])} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value={0}>All Scores</option>
                   <option value={60}>Score ≥ 60</option>
                   <option value={80}>Score ≥ 80</option>
-                  <option value={90}>Score ≥ 90</option>
                 </select>
               </div>
-            </div>
-            <div className="mt-3 text-sm text-gray-500">
-              Showing {filteredConversations.length} of {conversations.length} conversations
-              {stats.totalEvals > 0 && (
-                <span className="ml-2">
-                  • {stats.totalEvals} total evaluations
-                </span>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Conversations Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {filteredConversations.map((conv) => {
-            // Filter out tool-usage scorer from this conversation's scorers display
-            const filteredScorers = Object.entries(conv.evals.scorers).filter(
-              ([scorerId]) => scorerId !== "tool-usage-100"
-            );
-            
-            return (
-              <div
-                key={conv.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
-              >
-                {/* Conversation Header */}
-                <div 
-                  className="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => setExpandedConversation(
-                    expandedConversation === conv.id ? null : conv.id
-                  )}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <MessageSquare className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        <h3 className="text-lg font-semibold truncate">{conv.title}</h3>
-                        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
-                          {conv.messageCount} messages
-                        </span>
-                      </div>
-                      <p className="text-gray-600 text-sm truncate mb-2">
-                        {conv.preview}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span>Created: {formatDate(conv.createdAt)}</span>
-                        <span>Updated: {formatDate(conv.lastMessageAt)}</span>
-                      </div>
+          {filteredConversations.map((conv) => (
+            <div
+              key={conv.id}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setSelectedConversationId(conv.id)}
+            >
+              <div className="p-4 border-b border-gray-200">
+                <div className="mb-4">
+                  <div className="mb-4">
+                    <div className="mb-2">
+                      <MessageSquare className="w-4 h-4 text-gray-400 mb-1" />
+                      <h3 className="text-lg font-semibold truncate">{conv.title}</h3>
                     </div>
-                    <div className="flex items-center gap-4 ml-4">
-                      {/* Overall Score Circle */}
-                      <ScoreCircle score={conv.evals.averageScore} />
-                      {expandedConversation === conv.id ? (
-                        <ChevronUp className="w-5 h-5 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-gray-400" />
-                      )}
+                    <div className="inline-block px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                      {conv.messageCount} messages
                     </div>
+                  </div>
+                  <p className="text-gray-600 text-sm truncate mb-6">{conv.preview}</p>
+                  <div>
+                    <div className="text-xs text-gray-500 mb-2 font-bold tracking-wider">OVERALL SCORE</div>
+                    <ScoreLine score={conv.evals.averageScore} />
                   </div>
                 </div>
-
-                {/* Scorer Badges */}
-                <div className="p-4 border-b border-gray-200">
-                  <div className="flex flex-wrap gap-2">
-                    {filteredScorers.map(([scorerId, scorerData]) => (
-                      <ScorerBadge 
-                        key={scorerId} 
-                        scorerId={scorerId} 
-                        scorerData={scorerData} 
-                      />
-                    ))}
-                    {filteredScorers.length === 0 && (
-                      <div className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-full text-sm">
-                        No evaluations yet
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Expanded Details */}
-                {expandedConversation === conv.id && conv.evals.details.length > 0 && (
-                  <div className="p-4 bg-gray-50">
-                    <h4 className="font-medium mb-3 text-gray-700">Evaluation Details</h4>
-                    <div className="space-y-3">
-                      {conv.evals.details
-                        .filter(evalItem => evalItem.scorer_id !== "tool-usage-100") // Filter out tool-usage evaluations
-                        .map((evalItem, idx) => {
-                          const ScorerIcon = getScorerIcon(evalItem.scorer_id);
-                          return (
-                            <div
-                              key={idx}
-                              className="bg-white rounded-lg p-3 border border-gray-200"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div 
-                                    className="p-2 rounded-lg"
-                                    style={{ backgroundColor: `${getScorerColor(evalItem.scorer_id)}20` }}
-                                  >
-                                    <ScorerIcon className="w-4 h-4" style={{ color: getScorerColor(evalItem.scorer_id) }} />
-                                  </div>
-                                  <div>
-                                    <div className="font-medium">
-                                      {getScorerDisplayName(evalItem.scorer_id)}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {new Date(evalItem.created_at).toLocaleString()}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                  <div className="text-right">
-                                    <div className={`text-xl font-bold ${
-                                      evalItem.score >= 80 
-                                        ? "text-green-600" 
-                                        : evalItem.score >= 60
-                                        ? "text-yellow-600"
-                                        : "text-red-600"
-                                    }`}>
-                                      {evalItem.score}
-                                    </div>
-                                    <div className="flex items-center gap-1 text-sm">
-                                      {evalItem.passed ? (
-                                        <>
-                                          <CheckCircle className="w-3 h-3 text-green-500" />
-                                          <span className="text-green-600">Passed</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <XCircle className="w-3 h-3 text-red-500" />
-                                          <span className="text-red-600">Failed</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              {evalItem.metadata && Object.keys(evalItem.metadata).length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-gray-100">
-                                  <div className="text-xs text-gray-500">
-                                    {JSON.stringify(evalItem.metadata, null, 2)}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
               </div>
-            );
-          })}
+
+              <div className="p-4 bg-gray-50/50 border-t border-gray-100">
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(conv.evals.scorers)
+                    .filter(([id]) => id !== "tool-usage-100")
+                    .map(([scorerId, scorerData]) => (
+                      <ScorerBadge key={scorerId} scorerId={scorerId} scorerData={scorerData} />
+                    ))}
+                  {Object.keys(conv.evals.scorers).filter(id => id !== "tool-usage-100").length === 0 && (
+                    <div className="text-xs text-gray-400 italic">No evaluations yet</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Empty State */}
         {filteredConversations.length === 0 && !loading && (
           <div className="text-center py-16">
             <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No conversations found
-            </h3>
-            <p className="text-gray-500">
-              {searchTerm || selectedScorer !== "all" 
-                ? "Try adjusting your filters"
-                : "Start chatting to see conversation evaluations appear here"}
-            </p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No conversations found</h3>
+            <p className="text-gray-500">Try adjusting your filters or start chatting.</p>
           </div>
         )}
-
-        {/* Footer Stats */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <div className="flex items-center justify-between text-sm text-gray-500">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span>Score ≥ 80</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                <span>Score ≥ 60</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                <span>Score &lt; 60</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <RefreshCw className="w-3 h-3 animate-spin" />
-              <span>Auto-refreshes every 30 seconds</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
