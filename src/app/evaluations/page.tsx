@@ -245,12 +245,14 @@ export default function EvalsPage() {
 
       setAllEvals(evalsData);
 
+      const validEvals = evalsData.filter(e => e.score > 0);
+
       const processedConversations: UIConversation[] = conversationsData
         .filter((conv: Conversation): conv is Conversation => {
           return !!conv.id && !!conv.createdAt;
         })
         .map((conv: Conversation) => {
-          const conversationEvals = evalsData.filter(evalItem =>
+          const conversationEvals = validEvals.filter(evalItem =>
             evalItem.conversation_id === conv.id
           );
 
@@ -279,6 +281,25 @@ export default function EvalsPage() {
           const totalScore = conversationEvals.reduce((sum, e) => sum + e.score, 0);
           const passedCount = conversationEvals.filter(e => e.passed).length;
 
+          let calculatedScore = 0;
+          const mathScorer = scorersMap['math-reasoning-100'];
+          const logicScorer = scorersMap['logical-reasoning-100'];
+
+          const mathScore = mathScorer ? mathScorer.avgScore : 0;
+          const logicScore = logicScorer ? logicScorer.avgScore : 0;
+
+          if (mathScore > 0 && logicScore > 0) {
+            calculatedScore = (mathScore + logicScore) / 2;
+          } else if (mathScore > 0) {
+            calculatedScore = mathScore;
+          } else if (logicScore > 0) {
+            calculatedScore = logicScore;
+          } else {
+            calculatedScore = conversationEvals.length > 0
+              ? totalScore / conversationEvals.length
+              : 0;
+          }
+
           const result: UIConversation = {
             id: conv.id,
             title: getConversationTitle(conv),
@@ -290,9 +311,7 @@ export default function EvalsPage() {
             metadata: conv.metadata || {},
             evals: {
               total: conversationEvals.length,
-              averageScore: conversationEvals.length > 0
-                ? totalScore / conversationEvals.length
-                : 0,
+              averageScore: calculatedScore,
               passed: passedCount,
               failed: conversationEvals.length - passedCount,
               scorers: scorersMap,
@@ -305,8 +324,10 @@ export default function EvalsPage() {
 
       setConversations(processedConversations);
 
-      const totalEvals = evalsData.length;
-      const passedEvals = evalsData.filter(e => e.passed).length;
+      setConversations(processedConversations);
+
+      const totalEvals = validEvals.length;
+      const passedEvals = validEvals.filter(e => e.passed).length;
       const passRate = totalEvals > 0 ? (passedEvals / totalEvals) * 100 : 0;
 
       setStats({
@@ -427,13 +448,6 @@ export default function EvalsPage() {
             </div>
           </div>
 
-          <style jsx>{`
-            @keyframes loading {
-              0% { transform: translateX(-100%); width: 30%; }
-              50% { width: 60%; }
-              100% { transform: translateX(400%); width: 30%; }
-            }
-          `}</style>
         </div>
       </div>
     );

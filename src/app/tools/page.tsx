@@ -14,6 +14,7 @@ import {
   Clock
 } from "lucide-react";
 import { apiClient } from "../lib/api";
+import type { Conversation } from "../lib/types";
 
 interface ToolTelemetry {
   tool_name?: string;
@@ -29,6 +30,7 @@ interface ToolTelemetry {
 
 export default function ToolsPage() {
   const [telemetry, setTelemetry] = useState<ToolTelemetry[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<string>("all");
@@ -39,8 +41,12 @@ export default function ToolsPage() {
 
   const loadTelemetry = async () => {
     try {
-      const data = await apiClient.getToolTelemetry();
-      setTelemetry(Array.isArray(data) ? data : []);
+      const [telemetryData, conversationsData] = await Promise.all([
+        apiClient.getToolTelemetry(),
+        apiClient.getConversations(),
+      ]);
+      setTelemetry(Array.isArray(telemetryData) ? telemetryData : []);
+      setConversations(Array.isArray(conversationsData) ? conversationsData : []);
     } catch (error) {
       console.error("Failed to load tool telemetry:", error);
       setTelemetry([]);
@@ -114,6 +120,17 @@ export default function ToolsPage() {
     } catch {
       return 'Unknown';
     }
+  };
+
+  const getConversationInfo = (telemetryItem: ToolTelemetry) => {
+    const convId = telemetryItem.conversation_id || telemetryItem.conversationId || telemetryItem.metadata?.conversation_id;
+    if (!convId) return { title: 'Unknown Conversation', id: null };
+
+    const conv = conversations.find(c => c.id === convId);
+    return {
+      title: conv?.title || `Conversation ${convId.slice(0, 8)}`,
+      id: convId
+    };
   };
 
   // Loading Screen
@@ -323,6 +340,9 @@ export default function ToolsPage() {
                         Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Conversation
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Time
                       </th>
                     </tr>
@@ -357,6 +377,16 @@ export default function ToolsPage() {
                               </>
                             )}
                           </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">
+                            {getConversationInfo(item).title}
+                          </div>
+                          {getConversationInfo(item).id && (
+                            <div className="text-xs text-gray-500 font-mono">
+                              {getConversationInfo(item).id?.slice(0, 8)}...
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {formatDateTime(item.created_at)}

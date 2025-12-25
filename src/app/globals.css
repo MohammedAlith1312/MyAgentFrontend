@@ -91,3 +91,19 @@ body {
 .typing-dot:nth-child(3) {
   animation-delay: 0.4s;
 }
+
+@keyframes loading {
+  0% {
+    transform: translateX(-100%);
+    width: 30%;
+  }
+
+  50% {
+    width: 60%;
+  }
+
+  100% {
+    transform: translateX(400%);
+    width: 30%;
+  }
+}
