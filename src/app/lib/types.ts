@@ -250,3 +250,59 @@ export interface DocumentProcessingStatus {
   error?: string;
   filename?: string;
 }
+
+export interface GithubIssue {
+  id: number;
+  number: number;
+  title: string;
+  body: string;
+  state: 'open' | 'closed';
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  labels: {
+    name: string;
+    color: string;
+  }[];
+}
+
+export interface McpHealth {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  details?: Record<string, any>;
+}
+
+export interface GithubComment {
+  id: number;
+  body: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+}
+
+export interface CreateIssuePayload {
+  title: string;
+  body: string;
+  labels?: string[];
+  assignees?: string[];
+}
+
+export interface UpdateIssuePayload {
+  title?: string;
+  body?: string;
+  state?: 'open' | 'closed';
+  labels?: string[];
+  assignees?: string[];
+}
+
+export interface CreateCommentPayload {
+  body: string;
+}

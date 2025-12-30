@@ -8,10 +8,16 @@ import type {
   ToolUsage,
   GuardrailTelemetry,
   ToolTelemetry,
-  GuardrailLog
+  GuardrailLog,
+  GithubIssue,
+  McpHealth,
+  GithubComment,
+  CreateIssuePayload,
+  UpdateIssuePayload,
+  CreateCommentPayload
 } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://myagentbackend.onrender.com/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -570,6 +576,86 @@ export const apiClient = {
     } catch (error) {
       console.error("Error fetching guardrail stats:", error);
       return [];
+    }
+  },
+
+  getGithubIssues: async (state: 'open' | 'closed' | 'all' = 'open'): Promise<GithubIssue[]> => {
+    try {
+      const response = await api.get(`/github/issues?state=${state}`);
+      return response.data || [];
+    } catch (error) {
+      console.error("Error fetching GitHub issues:", error);
+      return [];
+    }
+  },
+
+  getGithubIssue: async (id: string): Promise<GithubIssue | null> => {
+    try {
+      const response = await api.get(`/github/issues/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching GitHub issue:", error);
+      return null;
+    }
+  },
+
+  getMcpHealth: async (): Promise<McpHealth | null> => {
+    try {
+      const response = await api.get("/health/mcp");
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching MCP health:", error);
+      return null;
+    }
+  },
+
+  createGithubIssue: async (payload: CreateIssuePayload): Promise<GithubIssue | null> => {
+    try {
+      const response = await api.post("/github/issues", payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating GitHub issue:", error);
+      return null;
+    }
+  },
+
+  updateGithubIssue: async (id: string, payload: UpdateIssuePayload): Promise<GithubIssue | null> => {
+    try {
+      const response = await api.patch(`/github/issues/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error updating GitHub issue:", error);
+      return null;
+    }
+  },
+
+  getGithubIssueComments: async (id: string): Promise<GithubComment[]> => {
+    try {
+      const response = await api.get(`/github/issues/${id}/comments`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching GitHub comments:", error);
+      return [];
+    }
+  },
+
+  createGithubIssueComment: async (id: string, payload: CreateCommentPayload): Promise<GithubComment | null> => {
+    try {
+      const response = await api.post(`/github/issues/${id}/comments`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating GitHub comment:", error);
+      return null;
+    }
+  },
+
+  deleteGithubComment: async (commentId: string) => {
+    try {
+      const response = await api.delete(`/github/comments/${commentId}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting GitHub comment:", error);
+      throw error;
     }
   },
 
