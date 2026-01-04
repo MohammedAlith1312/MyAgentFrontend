@@ -25,12 +25,17 @@ export interface Message {
 export interface Email {
   id: string;
   to: string;
+  from?: string; // Added from
   subject: string;
   body: string;
+  snippet?: string; // Added snippet
+  date?: string; // Added date
   status: 'EMAIL_SENT' | 'RECEIVED' | 'FAILED' | 'PENDING';
   createdAt: string;
   conversationId?: string;
   userId?: string;
+  threadId?: string;
+  attachments?: { filename: string; content: string; type: string }[];
 }
 
 export interface LiveEval {

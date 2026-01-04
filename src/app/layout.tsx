@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { Suspense } from "react";
 import "./globals.css";
 
 import { Sidebar } from "./components/Layout/Sidebar";
@@ -21,7 +22,9 @@ export default function RootLayout({
       <body className={`${inter.className} bg-gray-950`}>
         <div className="flex min-h-screen">
           {/* Modern Sidebar */}
-          <Sidebar />
+          <Suspense fallback={<div className="w-64 bg-gray-50 border-r border-gray-200 h-screen sticky top-0" />}>
+            <Sidebar />
+          </Suspense>
 
           {/* Main Content Area */}
           <main className="flex-1 overflow-y-auto">

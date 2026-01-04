@@ -287,10 +287,13 @@ export const apiClient = {
     }
   },
 
-  getEmails: async (): Promise<Email[]> => {
+  getEmails: async (listType: "inbox" | "sent" = "inbox"): Promise<Email[]> => {
     try {
-      const response = await api.get("/emails");
-      return response.data || [];
+      const response = await api.get(`/emails?type=${listType}`);
+      const data = response.data;
+      // Handle wrapped response { messages: [...] } or direct array
+      const messages = Array.isArray(data) ? data : (data.messages || []);
+      return messages;
     } catch (error) {
       console.error("Error fetching emails:", error);
       return [];
@@ -303,12 +306,44 @@ export const apiClient = {
     body: string;
     conversationId?: string;
     userId?: string;
+    attachments?: { filename: string; content: string; type: string }[];
   }) => {
     try {
       const response = await api.post("/emails/send", email);
       return response.data;
     } catch (error: any) {
       console.error("Error sending email:", error);
+      throw error;
+    }
+  },
+
+  uploadDocument: async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`${API_BASE_URL}/knowledge/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || errorData.error || response.statusText || "Upload failed";
+        const errorDetails = errorData.details ? ` (${errorData.details})` : "";
+
+        const error: any = new Error(`${errorMessage}${errorDetails}`);
+        error.response = {
+          data: errorData,
+          status: response.status,
+          statusText: response.statusText
+        };
+        throw error;
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      console.error("Error uploading document:", error);
       throw error;
     }
   },
